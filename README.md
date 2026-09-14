@@ -51,3 +51,4 @@ plugins/jarvis/
   bin/jarvis                      setup / mute / test / voice / status
   skills/jarvis/SKILL.md          the /jarvis command
 ```
+- Bump `version` in plugins/jarvis/.claude-plugin/plugin.json after edits, then `claude plugin marketplace update jarvis-local && claude plugin update jarvis@jarvis-local` — the installed copy is cached per version. For rapid iteration use `claude --plugin-dir ~/Work/jarvis/plugins/jarvis` instead.
