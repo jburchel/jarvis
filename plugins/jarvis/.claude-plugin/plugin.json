@@ -1,0 +1,6 @@
+{
+  "name": "jarvis",
+  "description": "Voice feedback for Claude Code using free TTS (Edge TTS online, Piper offline). Speaks task summaries, permission requests, and tool narration.",
+  "version": "0.1.0",
+  "author": { "name": "Jim Burchel" }
+}

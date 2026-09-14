@@ -1,0 +1,13 @@
+{
+  "name": "jarvis-local",
+  "description": "Local marketplace for the Jarvis voice plugin",
+  "owner": { "name": "Jim Burchel" },
+  "plugins": [
+    {
+      "name": "jarvis",
+      "description": "Voice feedback for Claude Code using free TTS (Edge TTS online, Piper offline). Speaks task summaries, permission requests, and tool narration.",
+      "source": "./plugins/jarvis",
+      "category": "productivity"
+    }
+  ]
+}

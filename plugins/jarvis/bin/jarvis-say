@@ -1,0 +1,80 @@
+#!/bin/bash
+# jarvis-say [--low] [--engine edge|piper|espeak] "text"   (or text on stdin)
+# Synthesizes speech with Edge TTS, falling back to Piper, then espeak-ng,
+# and plays it. Playback is serialized with a lock; --low means "drop this
+# line if something is already speaking" (used for tool narration).
+. "$(dirname "$(readlink -f "$0")")/jarvis-env"
+
+low=0; engine="$JARVIS_ENGINE"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --low) low=1; shift ;;
+    --engine) engine="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+text="$*"; [ -z "$text" ] && text="$(cat)"
+text="$(printf '%s' "$text" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+[ -z "$text" ] && exit 0
+jarvis_muted && exit 0
+
+lock="$JARVIS_CACHE/play.lock"
+out="$(mktemp "$JARVIS_CACHE/say.XXXXXX")"
+trap 'rm -f "$out" "$out".*' EXIT
+
+# --- synthesis backends -------------------------------------------------------
+synth_edge() {
+  [ -x "$JARVIS_VENV/bin/edge-tts" ] || return 1
+  timeout "$JARVIS_EDGE_TIMEOUT" "$JARVIS_VENV/bin/edge-tts" \
+    --voice "$JARVIS_EDGE_VOICE" --rate="$JARVIS_EDGE_RATE" \
+    --text "$text" --write-media "$out.mp3" >/dev/null 2>&1 \
+    && [ -s "$out.mp3" ] && echo "$out.mp3"
+}
+synth_piper() {
+  [ -x "$JARVIS_VENV/bin/piper" ] || return 1
+  local model="$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx"
+  [ -f "$model" ] || return 1
+  printf '%s' "$text" | timeout 30 "$JARVIS_VENV/bin/piper" -m "$model" \
+    --length-scale "$JARVIS_PIPER_LENGTH" -f "$out.wav" >/dev/null 2>&1 \
+    && [ -s "$out.wav" ] && echo "$out.wav"
+}
+synth_espeak() {
+  command -v espeak-ng >/dev/null || return 1
+  espeak-ng -v en-gb -s 165 -w "$out.wav" "$text" >/dev/null 2>&1 \
+    && [ -s "$out.wav" ] && echo "$out.wav"
+}
+
+file=""
+case "$engine" in
+  edge)   file="$(synth_edge)" ;;
+  piper)  file="$(synth_piper)" ;;
+  espeak) file="$(synth_espeak)" ;;
+  *)      file="$(synth_edge)" || file="$(synth_piper)" || file="$(synth_espeak)" ;;
+esac
+if [ -z "$file" ]; then jarvis_log "FAIL synth: $text"; exit 1; fi
+jarvis_log "say[${file##*.}$([ "$low" = 1 ] && echo " low")]: $text"
+
+# --- playback -------------------------------------------------------------------
+play() {
+  local p="$JARVIS_PLAYER"
+  if [ -z "$p" ]; then
+    for c in mpv ffplay pw-play paplay; do command -v "$c" >/dev/null && { p="$c"; break; }; done
+  fi
+  case "$p" in
+    mpv)    mpv --no-video --really-quiet --no-terminal "$1" ;;
+    ffplay) ffplay -nodisp -autoexit -loglevel quiet "$1" ;;
+    pw-play|paplay)
+      case "$1" in *.wav) "$p" "$1" ;; *) mpv --no-video --really-quiet --no-terminal "$1" ;; esac ;;
+    *) jarvis_log "no audio player found"; return 1 ;;
+  esac
+}
+
+exec 9>"$lock"
+if [ "$low" = 1 ]; then
+  # Narration: don't queue behind other speech; if busy, drop it.
+  flock -n 9 || exit 0
+else
+  flock -w 60 9
+fi
+play "$file"

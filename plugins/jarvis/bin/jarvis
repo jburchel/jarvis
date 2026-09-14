@@ -1,0 +1,62 @@
+#!/bin/bash
+# jarvis <command>  — setup and control for the Jarvis voice plugin
+#   setup            install venv, edge-tts, piper, default voice, config
+#   test [engine]    speak a test line (engine: edge | piper | espeak)
+#   say "text"       speak arbitrary text
+#   mute | unmute    silence / restore all speech
+#   status           show engines, voices, config, mute state
+#   voices           list installed Piper voices and a few Edge suggestions
+#   voice <name>     set the Edge voice (en-GB-RyanNeural, en-US-GuyNeural ...)
+#   piper-voice <n>  download and set a Piper voice (en_GB-alan-medium ...)
+#   log              tail the log
+BIN="$(dirname "$(readlink -f "$0")")"
+. "$BIN/jarvis-env"
+
+set_cfg() { # set_cfg KEY VALUE  (idempotent edit of config.sh)
+  mkdir -p "$JARVIS_CONFIG_DIR"; local f="$JARVIS_CONFIG_DIR/config.sh"; touch "$f"
+  if grep -q "^$1=" "$f"; then sed -i "s|^$1=.*|$1=\"$2\"|" "$f"; else echo "$1=\"$2\"" >> "$f"; fi
+}
+
+case "${1:-status}" in
+setup)
+  mkdir -p "$JARVIS_HOME" "$JARVIS_VOICES" "$JARVIS_CONFIG_DIR"
+  [ -x "$JARVIS_VENV/bin/python" ] || python3 -m venv "$JARVIS_VENV"
+  "$JARVIS_VENV/bin/pip" install -q --upgrade pip edge-tts piper-tts
+  if [ ! -f "$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx" ]; then
+    (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$JARVIS_PIPER_VOICE")
+  fi
+  if [ ! -f "$JARVIS_CONFIG_DIR/config.sh" ]; then
+    sed -n '/^# ---- defaults/,/^\[ -f/p' "$BIN/jarvis-env" | grep -E '^: "\$\{JARVIS_' | sed -E 's/^: "\$\{([A-Z_]+):=([^}]*)\}"/# \1="\2"/' > "$JARVIS_CONFIG_DIR/config.sh"
+    sed -i '1i # Jarvis config — uncomment and edit any line to override the default.\n' "$JARVIS_CONFIG_DIR/config.sh"
+  fi
+  command -v mpv >/dev/null || command -v ffplay >/dev/null || command -v pw-play >/dev/null \
+    || echo "WARNING: no audio player found (install mpv)"
+  echo "Jarvis setup complete."; "$BIN/jarvis-say" "Setup complete, $JARVIS_ADDRESS. All systems online." ;;
+test)
+  e="${2:-}"; [ -n "$e" ] && set -- --engine "$e" || set --
+  "$BIN/jarvis-say" "$@" "Good day, $JARVIS_ADDRESS. This is a test of the ${e:-primary} voice." ;;
+say)  shift; "$BIN/jarvis-say" "$@" ;;
+mute)   mkdir -p "$JARVIS_CONFIG_DIR"; touch "$JARVIS_CONFIG_DIR/muted"; echo "Jarvis muted." ;;
+unmute) rm -f "$JARVIS_CONFIG_DIR/muted"; echo "Jarvis unmuted."; "$BIN/jarvis-say" "Back online, $JARVIS_ADDRESS." ;;
+status)
+  echo "muted:        $(jarvis_muted && echo yes || echo no)"
+  echo "engine:       $JARVIS_ENGINE"
+  echo "edge-tts:     $([ -x "$JARVIS_VENV/bin/edge-tts" ] && echo "ok ($JARVIS_EDGE_VOICE)" || echo missing)"
+  echo "piper:        $([ -f "$JARVIS_VOICES/$JARVIS_PIPER_VOICE.onnx" ] && echo "ok ($JARVIS_PIPER_VOICE)" || echo "missing voice $JARVIS_PIPER_VOICE")"
+  echo "espeak-ng:    $(command -v espeak-ng >/dev/null && echo ok || echo missing)"
+  echo "summary:      $JARVIS_SUMMARY ($JARVIS_SUMMARY_MODEL)"
+  echo "narrate:      $JARVIS_NARRATE ($JARVIS_NARRATE_TOOLS)"
+  echo "greet/idle:   $JARVIS_GREET / $JARVIS_IDLE_ALERT"
+  echo "config:       $JARVIS_CONFIG_DIR/config.sh"
+  echo "log:          $JARVIS_LOG" ;;
+voices)
+  echo "Installed Piper voices:"; ls "$JARVIS_VOICES" 2>/dev/null | grep '\.onnx$' | sed 's/\.onnx$//; s/^/  /'
+  echo "Edge voices (British male picks): en-GB-RyanNeural en-GB-ThomasNeural en-US-GuyNeural en-US-ChristopherNeural"
+  echo "Full list: $JARVIS_VENV/bin/edge-tts --list-voices" ;;
+voice) set_cfg JARVIS_EDGE_VOICE "$2"; echo "Edge voice set to $2"; JARVIS_EDGE_VOICE="$2" "$BIN/jarvis-say" --engine edge "This is $2, $JARVIS_ADDRESS." ;;
+piper-voice)
+  (cd "$JARVIS_VOICES" && "$JARVIS_VENV/bin/python" -m piper.download_voices "$2") && set_cfg JARVIS_PIPER_VOICE "$2" \
+  && JARVIS_PIPER_VOICE="$2" "$BIN/jarvis-say" --engine piper "This is $2, $JARVIS_ADDRESS." ;;
+log) tail -n "${2:-30}" "$JARVIS_LOG" 2>/dev/null || echo "no log yet" ;;
+*) sed -n '2,13p' "$0"; exit 1 ;;
+esac

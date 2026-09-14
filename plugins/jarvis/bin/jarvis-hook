@@ -1,0 +1,105 @@
+#!/bin/bash
+# jarvis-hook <event>   — reads Claude Code hook JSON on stdin, speaks.
+# Events: session-start | stop | notification | pre-tool
+BIN="$(dirname "$(readlink -f "$0")")"
+. "$BIN/jarvis-env"
+
+# Our own `claude -p` summarizer child must never re-trigger these hooks.
+[ -n "$JARVIS_SILENT" ] && exit 0
+jarvis_muted && exit 0
+
+event="$1"; input="$(cat)"
+j() { printf '%s' "$input" | jq -r "$1 // empty" 2>/dev/null; }
+say() { "$BIN/jarvis-say" "$@"; }
+Addr="${JARVIS_ADDRESS^}"
+
+# Strip markdown/code so text reads well aloud.
+clean() {
+  sed -E '/^```/,/^```/d' \
+  | sed -E 's/`([^`]*)`/\1/g; s/\*\*|__//g; s/^#+ *//; s/^[-*] +//; s/\[([^]]*)\]\([^)]*\)/\1/g; s#https?://[^ ]+#a link#g' \
+  | tr -s '[:space:]' ' '
+}
+first_sentences() { # first N sentences of stdin
+  python3 -c '
+import re,sys
+t=sys.stdin.read().strip(); n=int(sys.argv[1])
+s=re.split(r"(?<=[.!?])\s+", t)
+print(" ".join(s[:n])[:400])' "$1"
+}
+
+case "$event" in
+
+session-start)
+  [ "$JARVIS_GREET" = 1 ] || exit 0
+  h=$(date +%H)
+  if   [ "$h" -lt 12 ]; then g="Good morning"
+  elif [ "$h" -lt 18 ]; then g="Good afternoon"
+  else g="Good evening"; fi
+  say "$g, $JARVIS_ADDRESS. Jarvis is online."
+  ;;
+
+stop)
+  msg="$(j .last_assistant_message)"
+  [ -z "$msg" ] && exit 0
+  mode="$JARVIS_SUMMARY"
+  cleaned="$(printf '%s' "$msg" | clean)"
+  if [ "${#cleaned}" -le "$JARVIS_SHORT_MSG_CHARS" ] && [ "$mode" != full ]; then
+    say "$cleaned"; exit 0
+  fi
+  case "$mode" in
+    full) say "$cleaned" ;;
+    heuristic) say "$(printf '%s' "$cleaned" | first_sentences 2)" ;;
+    *)
+      summary="$(printf '%s' "$msg" | JARVIS_SILENT=1 timeout 60 claude -p \
+        --model "$JARVIS_SUMMARY_MODEL" --effort low --tools "" \
+        --setting-sources "" --no-session-persistence \
+        --system-prompt "You are JARVIS, Tony Stark's AI assistant. You will receive the final message of a coding assistant's turn. Speak a brief spoken status update to '$JARVIS_ADDRESS': one or two sentences, at most 30 words, plain text only, no markdown, no code, no file paths longer than a basename. Say what was done and, if the user must do or decide something, say that. Be dry and understated, not sycophantic." \
+        2>/dev/null | tr -s '[:space:]' ' ')"
+      if [ -n "$summary" ]; then say "$summary"
+      else jarvis_log "haiku summary failed; using heuristic"
+           say "$(printf '%s' "$cleaned" | first_sentences 2)"; fi ;;
+  esac
+  ;;
+
+notification)
+  type="$(j .notification_type)"; text="$(j .message | clean)"
+  case "$type" in
+    permission_prompt)
+      # e.g. "Claude needs your permission to use Bash"
+      what="$(printf '%s' "$text" | sed -E 's/^Claude needs your permission to //; s/^Claude //')"
+      say "$Addr, I need your approval to ${what% }." ;;
+    idle_prompt)
+      [ "$JARVIS_IDLE_ALERT" = 1 ] && say "Awaiting your input, $JARVIS_ADDRESS." ;;
+    agent_needs_input|elicitation_dialog)
+      say "$Addr, your input is required. ${text}" ;;
+    *) [ -n "$text" ] && say "$text" ;;
+  esac
+  ;;
+
+pre-tool)
+  [ "$JARVIS_NARRATE" = 1 ] || exit 0
+  tool="$(j .tool_name)"
+  case " $JARVIS_NARRATE_TOOLS " in *" $tool "*) ;; *) exit 0 ;; esac
+  base() { j "$1" | xargs -r -n1 basename 2>/dev/null | head -1; }
+  case "$tool" in
+    Bash)      line="$(j .tool_input.description)"; [ -z "$line" ] && line="Running a command" ;;
+    Edit|MultiEdit|NotebookEdit) line="Editing $(base .tool_input.file_path | sed 's/\.[^.]*$//')" ;;
+    Write)     line="Writing $(base .tool_input.file_path)" ;;
+    Agent)     line="Delegating: $(j .tool_input.description)" ;;
+    WebSearch) line="Searching the web for $(j .tool_input.query)" ;;
+    WebFetch)  line="Fetching $(j .tool_input.url | sed -E 's#https?://([^/]+).*#\1#')" ;;
+    *)         line="Using $tool" ;;
+  esac
+  line="$(printf '%s' "$line" | tr -s '[:space:]' ' ' | cut -c1-120)"
+  # Debounce identical lines (e.g. ten "Editing config" in a row).
+  last="$JARVIS_CACHE/last-narration"
+  now=$(date +%s)
+  if [ -f "$last" ]; then
+    read -r lt lline < "$last" || true
+    [ "$lline" = "$line" ] && [ $((now - lt)) -lt "$JARVIS_NARRATE_COOLDOWN" ] && exit 0
+  fi
+  printf '%s %s\n' "$now" "$line" > "$last"
+  say --low "$line"
+  ;;
+esac
+exit 0

@@ -1,0 +1,35 @@
+{
+  "description": "Jarvis voice hooks: spoken summaries, permission alerts, tool narration, session greeting",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" session-start", "async": true, "timeout": 30 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" stop", "async": true, "timeout": 90 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt|agent_needs_input|elicitation_dialog",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" notification", "async": true, "timeout": 30 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" pre-tool", "async": true, "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}
