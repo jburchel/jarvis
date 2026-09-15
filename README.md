@@ -1,12 +1,8 @@
-# Jarvis — free voice feedback for Claude Code
+# Jarvis — Claude Code adapter
 
-A Claude Code plugin that gives Claude a voice without an ElevenLabs key.
-
-- **Edge TTS** (Microsoft's free neural voices, no API key) for quality when online
-- **Piper** (fully offline, ~60 MB voice) as the automatic fallback
-- **espeak-ng** as a last resort if installed
-
-## What it says
+Gives Claude Code a voice through [omarchy-jarvis](https://github.com/jburchel/omarchy-jarvis),
+the agent-agnostic core (TTS, hush/interrupt, "Hey Jarvis" wake word, Omarchy bar widget).
+This repo is only the Claude Code side: hooks that decide *when* to speak and *what* to say.
 
 | Event | Hook | Behaviour |
 |---|---|---|
@@ -19,24 +15,36 @@ All hooks run `async`, so Claude never waits on audio.
 
 ## Install
 
-```bash
-claude plugin marketplace add ~/Work/jarvis     # or the git URL once pushed
-claude plugin install jarvis@jarvis-local
-~/.claude/plugins/... /bin/jarvis setup          # or just: /jarvis setup inside Claude
-```
+1. Install the core and put `jarvis` on your PATH — on Omarchy:
+   ```bash
+   omarchy plugin add https://github.com/jburchel/omarchy-jarvis --enable
+   ~/.config/omarchy/plugins/io.github.jburchel.jarvis/bin/jarvis setup
+   ln -s ~/.config/omarchy/plugins/io.github.jburchel.jarvis/bin/jarvis ~/.local/bin/jarvis
+   ```
+   On any other Linux: clone omarchy-jarvis anywhere, run `bin/jarvis setup`, symlink
+   `bin/jarvis` onto your PATH. The bar widget and visualizer are Omarchy-only; everything
+   else works without them.
+2. Install this plugin:
+   ```bash
+   claude plugin marketplace add jburchel/jarvis      # or a local path
+   claude plugin install jarvis@jarvis
+   ```
 
-`setup` creates `~/.local/share/jarvis/venv` with `edge-tts` + `piper-tts`, downloads the
-`en_GB-alan-medium` Piper voice, and writes `~/.config/jarvis/config.sh`.
-
-Requirements: Python 3, `jq`, and one of `mpv` / `ffplay` / `pw-play`.
+If `jarvis` isn't on PATH for the process Claude Code runs hooks in, set `JARVIS_CORE` to the
+core's `bin/` directory.
 
 ## Control
 
-`/jarvis mute`, `/jarvis unmute`, `/jarvis test piper`, `/jarvis voice en-GB-ThomasNeural`,
-`/jarvis status` — or run `plugins/jarvis/bin/jarvis` directly.
+`/jarvis hush` (interrupt), `/jarvis mute`, `/jarvis unmute`, `/jarvis pronounce plugin "plug-in"`,
+`/jarvis listen enable` (wake word), `/jarvis voice en-GB-ThomasNeural`, `/jarvis status` —
+the skill maps these to the `jarvis` CLI.
 
-Config keys (all optional) are in `~/.config/jarvis/config.sh`; defaults and docs are in
-`plugins/jarvis/bin/jarvis-env`.
+Narration on/off, which tools to narrate, summary mode, and how Jarvis addresses you live in
+`~/.config/jarvis/config.sh` (documented in the core's `bin/jarvis-env`).
+
+## Other agents
+
+See [ADAPTERS.md](ADAPTERS.md) for the CLI contract and Codex / Gemini / generic examples.
 
 ## Layout
 
@@ -45,10 +53,11 @@ Config keys (all optional) are in `~/.config/jarvis/config.sh`; defaults and doc
 plugins/jarvis/
   .claude-plugin/plugin.json
   hooks/hooks.json                event → bin/jarvis-hook
-  bin/jarvis-env                  defaults + config loading
-  bin/jarvis-say                  synth (edge → piper → espeak) + locked playback
-  bin/jarvis-hook                 turns hook JSON into speech
-  bin/jarvis                      setup / mute / test / voice / status
+  bin/jarvis-hook                 turns hook JSON into `jarvis say` calls
   skills/jarvis/SKILL.md          the /jarvis command
+ADAPTERS.md                       hooking other agents to the core
 ```
-- Bump `version` in plugins/jarvis/.claude-plugin/plugin.json after edits, then `claude plugin marketplace update jarvis-local && claude plugin update jarvis@jarvis-local` — the installed copy is cached per version. For rapid iteration use `claude --plugin-dir ~/Work/jarvis/plugins/jarvis` instead.
+
+Bump `version` in `plugins/jarvis/.claude-plugin/plugin.json` after edits, then
+`claude plugin marketplace update <name> && claude plugin update jarvis@<name>` — the installed
+copy is cached per version. For rapid iteration: `claude --plugin-dir ./plugins/jarvis`.

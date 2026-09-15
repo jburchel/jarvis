@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "jarvis",
-      "description": "Voice feedback for Claude Code using free TTS (Edge TTS online, Piper offline). Speaks task summaries, permission requests, and tool narration.",
+      "description": "Claude Code adapter for the Jarvis voice core (omarchy-jarvis): spoken summaries, permission alerts, tool narration, /jarvis control.",
       "source": "./plugins/jarvis",
       "category": "productivity"
     }

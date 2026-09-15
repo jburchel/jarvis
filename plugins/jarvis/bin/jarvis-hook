@@ -1,8 +1,11 @@
 #!/bin/bash
 # jarvis-hook <event>   — reads Claude Code hook JSON on stdin, speaks.
 # Events: session-start | stop | notification | pre-tool
-BIN="$(dirname "$(readlink -f "$0")")"
-. "$BIN/jarvis-env"
+# The voice itself lives in the omarchy-jarvis core (github.com/jburchel/omarchy-jarvis).
+# Find it via the `jarvis` command on PATH, or JARVIS_CORE=/path/to/omarchy-jarvis/bin.
+CORE="${JARVIS_CORE:-$(dirname "$(readlink -f "$(command -v jarvis 2>/dev/null || echo /nonexistent)")")}"
+[ -f "$CORE/jarvis-env" ] || { echo "jarvis-hook: core not found; install omarchy-jarvis and put its bin/jarvis on PATH" >&2; exit 0; }
+. "$CORE/jarvis-env"
 
 # Our own `claude -p` summarizer child must never re-trigger these hooks.
 [ -n "$JARVIS_SILENT" ] && exit 0
@@ -10,7 +13,7 @@ jarvis_muted && exit 0
 
 event="$1"; input="$(cat)"
 j() { printf '%s' "$input" | jq -r "$1 // empty" 2>/dev/null; }
-say() { "$BIN/jarvis-say" "$@"; }
+say() { "$CORE/jarvis-say" "$@"; }
 Addr="${JARVIS_ADDRESS^}"
 
 # Strip markdown/code so text reads well aloud.
