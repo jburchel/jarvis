@@ -1,11 +1,25 @@
 {
-  "description": "Jarvis voice hooks: spoken summaries, permission alerts, tool narration, session greeting",
+  "description": "Jarvis voice hooks: spoken summaries, permission alerts, tool narration, session greeting, hush on new prompt",
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup",
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" session-start", "async": true, "timeout": 30 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" prompt-submit", "async": true, "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/jarvis-hook\" session-end", "async": true, "timeout": 10 }
         ]
       }
     ],

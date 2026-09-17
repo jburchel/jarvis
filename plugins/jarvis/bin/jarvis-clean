@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""jarvis-clean — turn a markdown reply into text that reads well aloud.
+
+  jarvis-clean                 stdin → cleaned text
+  jarvis-clean --sentences N   cleaned text, first N sentences (≤400 chars)
+  jarvis-clean --question      the last sentence ending in "?", or nothing
+
+Copy this if you are writing an adapter for another agent; it has no Jarvis dependencies.
+"""
+import re
+import sys
+import unicodedata
+
+MAX_SENTENCES_CHARS = 400
+MAX_QUESTION_CHARS = 200
+
+
+def clean(text: str) -> str:
+    out = []
+    in_fence = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if re.fullmatch(r"[-*_]{3,}", s):  # horizontal rule
+            continue
+        if s.startswith("|"):
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if all(re.fullmatch(r":?-+:?", c) for c in cells if c):  # header separator
+                continue
+            cells = [c for c in cells if c]
+            if cells:
+                out.append(", ".join(cells) + ".")
+            continue
+        s = re.sub(r"^>\s*", "", s)           # blockquotes
+        # Headings and list items are sentences of their own; give them a stop
+        # so they don't run into the next line when read aloud.
+        s, structural = re.subn(r"^(?:#+\s*|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?)", "", s)
+        if structural and s and s[-1] not in ".!?:;,":
+            s += "."
+        out.append(s)
+    t = "\n".join(out)
+
+    t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)   # [text](url) → text
+    t = re.sub(r"https?://\S+", "a link", t)
+    t = re.sub(r"`([^`]*)`", r"\1", t)
+    t = re.sub(r"\*\*|__|(?<!\w)[*_](?=\w)|(?<=\w)[*_](?!\w)", "", t)  # bold / italics
+    # paths → basename: /a/b/file.ts:123, ~/.config/jarvis, ./x → file.ts, jarvis, x;
+    # relative ones only when they end in a file extension, so "and/or" survives.
+    t = re.sub(r"(?<![\w.])(?:~|\.{1,2})?/(?:[\w.@-]+/)*([\w.@-]+)(?::\d+(?::\d+)?)?", r"\1", t)
+    t = re.sub(r"(?<![\w./~])(?:[\w@-]+/)+([\w@-]+\.\w+)(?::\d+(?::\d+)?)?", r"\1", t)
+    t = re.sub(r"(\.\w{1,4}):\d+(?::\d+)?\b", r"\1", t)  # file.ts:12 → file.ts
+    t = re.sub(r"(?<!\w)\$\{?([A-Za-z_]\w*)\}?", r"\1", t)  # $VAR → VAR
+    t = t.replace("→", " to ").replace("←", " from ").replace("⇒", " gives ")
+
+    # Emoji and other symbols read as their names ("check mark button"); drop
+    # them, keep letters in any script and ordinary punctuation.
+    t = "".join(
+        c for c in t
+        if ord(c) < 128 or unicodedata.category(c)[0] not in ("S", "C")
+    )
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r" *\n+ *", " ", t)
+    t = re.sub(r"\s+([,.;:!?])", r"\1", t)
+    t = re.sub(r"([.!?])\1+", r"\1", t)
+    return t.strip()
+
+
+def sentences(text: str):
+    return [s for s in re.split(r"(?<=[.!?])\s+", text) if s]
+
+
+def first_sentences(text: str, n: int) -> str:
+    return " ".join(sentences(text)[:n])[:MAX_SENTENCES_CHARS]
+
+
+def last_question(text: str) -> str:
+    for s in reversed(sentences(text)):
+        if s.endswith("?"):
+            return s if len(s) <= MAX_QUESTION_CHARS else ""
+    return ""
+
+
+def main(argv):
+    text = clean(sys.stdin.read())
+    if len(argv) >= 2 and argv[0] == "--sentences":
+        print(first_sentences(text, int(argv[1])))
+    elif argv and argv[0] == "--question":
+        print(last_question(text))
+    else:
+        print(text)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

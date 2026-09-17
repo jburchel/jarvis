@@ -16,20 +16,23 @@ agent just needs to call the CLI at the right moments.
 ## The contract
 
 ```
-jarvis say "text"          # speak, queued behind anything already playing
-jarvis say --low "text"    # speak only if idle; drop otherwise (tool narration)
-jarvis hush                # stop now, drop the queue
-jarvis state               # idle | speaking | listening | muted | off
+jarvis say "text"            # speak, queued behind anything already playing
+jarvis say --low "text"      # speak only if idle; drop otherwise (tool narration)
+jarvis say --replace "text"  # speak, but drop any earlier --replace line still queued (turn summaries)
+jarvis hush                  # stop now, drop the queue
+jarvis state                 # idle | speaking | listening | muted | off
 ```
 
-Text is cleaned of markdown by the caller (see `plugins/jarvis/bin/jarvis-hook`'s `clean()` if
-you want to copy it). Pronunciation fixes in `~/.config/jarvis/pronounce.txt` apply to every caller.
+Text is cleaned of markdown by the caller — `plugins/jarvis/bin/jarvis-clean` is a standalone
+python filter (`--sentences N`, `--question`) you can copy as-is. Pronunciation fixes in
+`~/.config/jarvis/pronounce.txt` apply to every caller.
 
 ## Adapters
 
 ### Claude Code (shipped)
 `plugins/jarvis/hooks/hooks.json` → `bin/jarvis-hook`. Events: `Stop` (summary),
-`Notification` (approval / input needed), `PreToolUse` (narration), `SessionStart` (greeting).
+`Notification` (approval / input needed), `PreToolUse` (narration), `SessionStart` (greeting),
+`UserPromptSubmit` / `SessionEnd` (hush).
 
 ### OpenAI Codex CLI
 Codex has a `notify` hook in `~/.codex/config.toml` that runs a program with a JSON payload

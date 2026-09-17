@@ -1,0 +1,4 @@
+#!/bin/bash
+# Fake jarvis CLI: record the verb.
+. "$(dirname "$0")/jarvis-env"
+printf 'jarvis %s\n' "$*" >> "$JARVIS_CACHE/spoken"

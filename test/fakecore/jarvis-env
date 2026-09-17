@@ -1,0 +1,16 @@
+# Fake core for tests: the subset of omarchy-jarvis/bin/jarvis-env that jarvis-hook uses.
+# JARVIS_CACHE is set by the runner to a fresh temp dir; speech lands in $JARVIS_CACHE/spoken.
+: "${JARVIS_CACHE:=/tmp/jarvis-test}"
+: "${JARVIS_CONFIG_DIR:=$JARVIS_CACHE/config}"
+: "${JARVIS_LOG:=$JARVIS_CACHE/log}"
+: "${JARVIS_ADDRESS:=sir}"
+: "${JARVIS_SUMMARY:=heuristic}"
+: "${JARVIS_SHORT_MSG_CHARS:=220}"
+: "${JARVIS_NARRATE:=1}"
+: "${JARVIS_NARRATE_TOOLS:=Bash Edit Write MultiEdit NotebookEdit Agent WebFetch WebSearch}"
+: "${JARVIS_NARRATE_COOLDOWN:=4}"
+: "${JARVIS_GREET:=1}"
+: "${JARVIS_IDLE_ALERT:=1}"
+mkdir -p "$JARVIS_CACHE" "$JARVIS_CONFIG_DIR"
+jarvis_log() { printf '%s\n' "$*" >> "$JARVIS_LOG"; }
+jarvis_muted() { [ -f "$JARVIS_CONFIG_DIR/muted" ]; }

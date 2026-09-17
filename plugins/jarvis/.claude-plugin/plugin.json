@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
   "description": "Claude Code adapter for the Jarvis voice core (omarchy-jarvis): spoken task summaries, permission alerts, tool narration, /jarvis control (hush, mute, wake word, pronunciations).",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": { "name": "Jim Burchel" }
 }
