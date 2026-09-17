@@ -1,7 +1,12 @@
 #!/bin/bash
-# Fake jarvis-say: record flags + text instead of speaking.
+# Fake jarvis-say: record flags + text instead of speaking. Exits 3 (dropped)
+# when the text contains "[drop]", so converse chaining can be tested.
 . "$(dirname "$0")/jarvis-env"
 flags=""
 while [ $# -gt 0 ]; do case "$1" in --*) flags="$flags$1 "; shift ;; *) break ;; esac; done
 text="$*"; [ -z "$text" ] && text="$(cat)"
 printf '%s%s\n' "$flags" "$text" >> "$JARVIS_CACHE/spoken"
+case "$text" in *"[drop]"*) exit 3 ;; esac
+# FAKE_HUSH=1: simulate the user hushing right after this line played.
+[ "$FAKE_HUSH" = 1 ] && echo "$(( $(jarvis_epoch) + 1 ))" > "$JARVIS_CACHE/epoch"
+exit 0

@@ -1,11 +1,13 @@
 {
   "name": "jarvis-local",
   "description": "Local marketplace for the Jarvis voice plugin",
-  "owner": { "name": "Jim Burchel" },
+  "owner": {
+    "name": "Jim Burchel"
+  },
   "plugins": [
     {
       "name": "jarvis",
-      "description": "Claude Code adapter for the Jarvis voice core (omarchy-jarvis): spoken summaries, permission alerts, tool narration, /jarvis control.",
+      "description": "Claude Code adapter for the Jarvis voice core (Linux or macOS): spoken summaries, permission alerts, tool narration, spoken tour, /jarvis control.",
       "source": "./plugins/jarvis",
       "category": "productivity"
     }

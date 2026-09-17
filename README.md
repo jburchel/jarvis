@@ -1,8 +1,10 @@
 # Jarvis — Claude Code adapter
 
-Gives Claude Code a voice through [omarchy-jarvis](https://github.com/jburchel/omarchy-jarvis),
-the agent-agnostic core (TTS, hush/interrupt, "Hey Jarvis" wake word, Omarchy bar widget).
-This repo is only the Claude Code side: hooks that decide *when* to speak and *what* to say.
+Gives Claude Code a voice through an agent-agnostic core — [omarchy-jarvis](https://github.com/jburchel/omarchy-jarvis)
+on Linux, mac-jarvis on macOS — that does TTS, hush/interrupt, the "Hey Jarvis" wake word, local
+dictation and a bar / menu-bar widget. This repo is only the Claude Code side: hooks that decide
+*when* to speak and *what* to say, and the `/jarvis` command. One adapter, both platforms
+(bash 3.2-clean).
 
 | Event | Hook | Behaviour |
 |---|---|---|
@@ -25,6 +27,9 @@ Some details of what gets said:
   (auto = only when another session spoke in the last `JARVIS_SESSION_WINDOW` seconds, 600).
 - Markdown is cleaned for speech by `bin/jarvis-clean`: code blocks and links dropped, tables read
   as "cell, cell.", paths collapsed to basenames, emoji removed.
+- Conversation mode (macOS core, `JARVIS_CONVERSE=1`): after a reply is read, the mic opens for a
+  follow-up with no wake word. Only after a line that actually played — a superseded or hushed
+  summary (`jarvis-say` exits 3) doesn't open the mic.
 
 ## Install
 
@@ -36,7 +41,7 @@ Some details of what gets said:
    ```
    On any other Linux: clone omarchy-jarvis anywhere, run `bin/jarvis setup`, symlink
    `bin/jarvis` onto your PATH. The bar widget and visualizer are Omarchy-only; everything
-   else works without them.
+   else works without them. On macOS: clone mac-jarvis, `bin/jarvis setup`, same symlink.
 2. Install this plugin:
    ```bash
    claude plugin marketplace add jburchel/jarvis      # or a local path
@@ -51,6 +56,12 @@ core's `bin/` directory.
 `/jarvis hush` (interrupt), `/jarvis mute`, `/jarvis unmute`, `/jarvis pronounce plugin "plug-in"`,
 `/jarvis listen enable` (wake word), `/jarvis voice en-GB-ThomasNeural`, `/jarvis status` —
 the skill maps these to the `jarvis` CLI.
+
+**`/jarvis tour`** — Jarvis explains himself out loud, in his own voice: what he says and when,
+how to stop him, the wake word and dictation, voices, settings, the command. About three minutes;
+`/jarvis tour listening` for one section; any hush ends it. It adapts to the platform and to
+what's currently enabled (wake word, conversation mode). `bin/jarvis-tour --text` prints the
+script; `--outline` lists the sections.
 
 Narration on/off, which tools to narrate, summary mode, and how Jarvis addresses you live in
 `~/.config/jarvis/config.sh` (documented in the core's `bin/jarvis-env`); the adapter-only keys
@@ -79,6 +90,7 @@ plugins/jarvis/
   hooks/hooks.json                event → bin/jarvis-hook
   bin/jarvis-hook                 turns hook JSON into `jarvis say` calls
   bin/jarvis-clean                markdown → speakable text (python, no Jarvis dependencies)
+  bin/jarvis-tour                 the spoken tour
   skills/jarvis/SKILL.md          the /jarvis command
 test/run.sh, test/fakecore/       hook tests against a stub core
 ADAPTERS.md                       hooking other agents to the core

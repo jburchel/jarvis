@@ -14,3 +14,5 @@
 mkdir -p "$JARVIS_CACHE" "$JARVIS_CONFIG_DIR"
 jarvis_log() { printf '%s\n' "$*" >> "$JARVIS_LOG"; }
 jarvis_muted() { [ -f "$JARVIS_CONFIG_DIR/muted" ]; }
+jarvis_paused() { [ -f "$JARVIS_CONFIG_DIR/paused" ]; }
+jarvis_epoch() { cat "$JARVIS_CACHE/epoch" 2>/dev/null || echo 0; }

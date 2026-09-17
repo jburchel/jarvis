@@ -11,7 +11,8 @@ pass=0; fail=0
 
 fresh() { # fresh — new cache dir per test so sessions/debounce state don't leak
   JARVIS_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-test.XXXXXX")"; export JARVIS_CACHE
-  export JARVIS_SUMMARY=heuristic JARVIS_SESSION_TAG=auto
+  export JARVIS_SUMMARY=heuristic JARVIS_SESSION_TAG=auto JARVIS_SESSION_WINDOW=600 \
+         JARVIS_IDLE_ALERT=1 JARVIS_CONVERSE=0
 }
 run() { # run <event> <json>  — invoke the hook
   printf '%s' "$2" | "$HOOK" "$1"
@@ -36,6 +37,10 @@ check_log() { # check_log <name> <exact whole log>
 check_not() { # check_not <name> <substring that must be absent>
   if spoken | grep -qF -- "$2"; then fail=$((fail + 1)); printf 'FAIL   %s\n  must not contain %s\n' "$1" "$2"
   else pass=$((pass + 1)); [ "$verbose" = 1 ] && printf '  ok   %s\n' "$1"; fi
+}
+check_any() { # check_any <name> <regex>  — some spoken line matches
+  if spoken | grep -qE -- "$2"; then pass=$((pass + 1)); [ "$verbose" = 1 ] && printf '  ok   %s\n' "$1"
+  else fail=$((fail + 1)); printf 'FAIL   %s\n  want /%s/ somewhere in\n  %s\n' "$1" "$2" "$(spoken)"; fi
 }
 check_silent() { # check_silent <name>
   if [ -z "$(spoken)" ]; then pass=$((pass + 1)); [ "$verbose" = 1 ] && printf '  ok   %s (silent)\n' "$1"
@@ -151,6 +156,48 @@ run session-end "$(payload SessionEnd s1 /x --arg reason exit)"
 check_log "session end hushes while muted" 'jarvis hush'
 run stop "$(stop_msg 'Done.')"
 check_log "muted: stop stays silent" 'jarvis hush'
+
+# --- conversational mode: mic opens after a spoken reply, not after a dropped one -----
+converse_wait() { sleep 0.3; } # `jarvis converse` is launched detached
+fresh; export JARVIS_CONVERSE=1
+run stop "$(stop_msg 'Done.')"; converse_wait
+check_log "converse after spoken reply" '--replace Done.
+jarvis converse'
+fresh; export JARVIS_CONVERSE=1
+run stop "$(stop_msg 'Done. [drop]')"; converse_wait
+check_log "no converse after a dropped (superseded) line" '--replace Done. [drop]'
+fresh; export JARVIS_CONVERSE=1; mkdir -p "$JARVIS_CACHE/config"; touch "$JARVIS_CACHE/config/paused"
+run stop "$(stop_msg 'Done.')"; converse_wait
+check_log "no converse while paused" '--replace Done.'
+fresh; export JARVIS_CONVERSE=0
+run stop "$(stop_msg 'Done.')"; converse_wait
+check_log "converse off" '--replace Done.'
+fresh; export JARVIS_CONVERSE=1
+run notification "$(payload Notification s1 /x --arg notification_type idle_prompt --arg message x)"; converse_wait
+check_log "converse after idle prompt" 'Awaiting your input, sir.
+jarvis converse'
+
+
+# --- tour ---------------------------------------------------------------------------
+TOUR="$ROOT/plugins/jarvis/bin/jarvis-tour"
+fresh
+"$TOUR" --outline | grep -q '^listening ' && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour outline"; }
+"$TOUR" --text | grep -q 'I am Jarvis' && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour --text"; }
+check_silent "tour --text speaks nothing"
+"$TOUR" intro >/dev/null
+check "tour intro spoken" '^Everything I do is one of three things'
+[ "$(spoken | wc -l | tr -d ' ')" = 2 ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour intro is two paragraphs: $(spoken | wc -l)"; }
+fresh; FAKE_WAKE="active (pid 1)" "$TOUR" listening >/dev/null
+check_any "tour adapts to wake word on" '^Third, listening\. The wake word is on\.'
+fresh; "$TOUR" bogus >/dev/null 2>&1 && { fail=$((fail + 1)); echo "FAIL   tour rejects unknown section"; } || pass=$((pass + 1))
+fresh; FAKE_HUSH=1 "$TOUR" intro speaking | grep -q '(tour interrupted)' && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour stops on hush"; }
+[ "$(spoken | wc -l | tr -d ' ')" = 1 ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   hushed tour spoke only one paragraph: $(spoken | wc -l)"; }
+fresh; echo $$ > "$JARVIS_CACHE/tour.pid"
+run stop "$(stop_msg 'Starting the tour.')"
+check_silent "stop hook is silent while a tour is playing"
+echo 999999 > "$JARVIS_CACHE/tour.pid"
+run stop "$(stop_msg 'Done.')"
+check "stale tour pid is ignored" '^--replace Done\.$'
 
 # --- session start / recursion guard -------------------------------------------------
 fresh

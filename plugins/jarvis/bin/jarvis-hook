@@ -16,6 +16,8 @@ CORE="${JARVIS_CORE:-$(dirname "$(readlink -f "$(command -v jarvis 2>/dev/null |
 # Helpers the Linux core may not define (the macOS core does).
 type jarvis_cap >/dev/null 2>&1 || jarvis_cap() { printf '%s' "$1" | awk '{print toupper(substr($0,1,1)) substr($0,2)}'; }
 type jarvis_timeout >/dev/null 2>&1 || jarvis_timeout() { timeout "$@"; }
+type jarvis_paused >/dev/null 2>&1 || jarvis_paused() { false; }
+type jarvis_epoch >/dev/null 2>&1 || jarvis_epoch() { echo 0; }
 
 # Our own `claude -p` summarizer child must never re-trigger these hooks.
 [ -n "$JARVIS_SILENT" ] && exit 0
@@ -26,6 +28,18 @@ say() { "$CORE/jarvis-say" "$@"; }
 hush() { "$CORE/jarvis" hush >/dev/null 2>&1; }
 clean() { "$HERE/jarvis-clean" "$@"; }
 Addr="$(jarvis_cap "$JARVIS_ADDRESS")"
+
+# Conversational mode (cores that set JARVIS_CONVERSE=1): once a reply has been
+# read, open the mic for a follow-up without the wake word. Detached, so the hook
+# returns while you are still talking. Skipped if the line was dropped (say
+# exits 3: superseded or hushed), or you hushed/muted/paused during it.
+converse_after() { # converse_after <epoch-before-say>  — call as: say ... && converse_after "$epoch"
+  [ "$JARVIS_CONVERSE" = 1 ] || return 0
+  jarvis_muted && return 0
+  jarvis_paused && return 0
+  [ "$(jarvis_epoch)" = "$1" ] || return 0
+  ( nohup "$CORE/jarvis" converse >/dev/null 2>&1 </dev/null & )
+}
 
 # --- session tagging ------------------------------------------------------------
 # With several Claude Code sessions open, "Done, sir" from which one? Each session
@@ -68,9 +82,12 @@ session-start)
 stop)
   msg="$(j .last_assistant_message)"
   [ -z "$msg" ] && exit 0
+  # A tour is playing (bin/jarvis-tour): don't talk over it with "I started the tour".
+  if [ -f "$JARVIS_CACHE/tour.pid" ] && kill -0 "$(cat "$JARVIS_CACHE/tour.pid" 2>/dev/null)" 2>/dev/null; then exit 0; fi
   mode="$JARVIS_SUMMARY"
   cleaned="$(printf '%s' "$msg" | clean)"
   tag="$(session_tag)"
+  epoch="$(jarvis_epoch)"
   # A turn that ends by asking something: the question is the part you must hear,
   # verbatim, whatever the summary makes of the rest.
   question="$(printf '%s' "$msg" | clean --question)"
@@ -80,20 +97,20 @@ stop)
     printf '%s' "$s"
   }
   if [ "${#cleaned}" -le "$JARVIS_SHORT_MSG_CHARS" ] && [ "$mode" != full ]; then
-    say --replace "$tag$cleaned"; exit 0
+    say --replace "$tag$cleaned" && converse_after "$epoch"; exit 0
   fi
   case "$mode" in
-    full) say --replace "$tag$cleaned" ;;
-    heuristic) say --replace "$tag$(with_question "$(printf '%s' "$msg" | clean --sentences 2)")" ;;
+    full) say --replace "$tag$cleaned" && converse_after "$epoch" ;;
+    heuristic) say --replace "$tag$(with_question "$(printf '%s' "$msg" | clean --sentences 2)")" && converse_after "$epoch" ;;
     *)
       summary="$(printf '%s' "$msg" | JARVIS_SILENT=1 jarvis_timeout 60 claude -p \
         --model "$JARVIS_SUMMARY_MODEL" --effort low --tools "" \
         --setting-sources "" --no-session-persistence \
         --system-prompt "You are JARVIS, Tony Stark's AI assistant. You will receive the final message of a coding assistant's turn. Speak a brief spoken status update to '$JARVIS_ADDRESS': one or two sentences, at most 30 words, plain text only, no markdown, no code, no file paths longer than a basename. Say what was done and, if the user must do or decide something, say that. Be dry and understated, not sycophantic." \
         2>/dev/null | tr -s '[:space:]' ' ')"
-      if [ -n "$summary" ]; then say --replace "$tag$(with_question "$summary")"
+      if [ -n "$summary" ]; then say --replace "$tag$(with_question "$summary")" && converse_after "$epoch"
       else jarvis_log "haiku summary failed; using heuristic"
-           say --replace "$tag$(with_question "$(printf '%s' "$msg" | clean --sentences 2)")"; fi ;;
+           say --replace "$tag$(with_question "$(printf '%s' "$msg" | clean --sentences 2)")" && converse_after "$epoch"; fi ;;
   esac
   ;;
 
@@ -106,7 +123,9 @@ notification)
       what="$(printf '%s' "$text" | sed -E 's/^Claude needs your permission to //; s/^Claude //')"
       say "$tag$Addr, I need your approval to ${what% }." ;;
     idle_prompt)
-      [ "$JARVIS_IDLE_ALERT" = 1 ] && say "${tag}Awaiting your input, $JARVIS_ADDRESS." ;;
+      [ "$JARVIS_IDLE_ALERT" = 1 ] || exit 0
+      epoch="$(jarvis_epoch)"
+      say "${tag}Awaiting your input, $JARVIS_ADDRESS." && converse_after "$epoch" ;;
     agent_needs_input|elicitation_dialog)
       say "$tag$Addr, your input is required. ${text}" ;;
     *) [ -n "$text" ] && say "$tag$text" ;;

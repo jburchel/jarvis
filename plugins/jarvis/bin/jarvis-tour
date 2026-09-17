@@ -1,0 +1,107 @@
+#!/bin/bash
+# jarvis-tour [section ...]   — Jarvis explains himself, out loud.
+#   --outline      print the section names and what each covers, say nothing
+#   --text         print the full script instead of speaking it
+# Sections: intro speaking quiet listening voice settings commands. Default: all.
+# Each paragraph is one `jarvis say`; a hush (Right Alt, "Hey Jarvis", a new prompt)
+# ends the tour at the next paragraph. Adapts to the platform and current settings.
+HERE="$(dirname "$(readlink -f "$0")")"
+CORE="${JARVIS_CORE:-$(dirname "$(readlink -f "$(command -v jarvis 2>/dev/null || echo /nonexistent)")")}"
+[ -f "$CORE/jarvis-env" ] || { echo "jarvis-tour: core not found; install the Jarvis core and put its bin/jarvis on PATH" >&2; exit 1; }
+. "$CORE/jarvis-env"
+type jarvis_epoch >/dev/null 2>&1 || jarvis_epoch() { echo 0; }
+type jarvis_paused >/dev/null 2>&1 || jarvis_paused() { false; }
+
+mac=0; case "$(uname)" in Darwin) mac=1 ;; esac
+you="$JARVIS_ADDRESS"
+wake="$("$CORE/jarvis" listen status 2>/dev/null | head -1)"; case "$wake" in active*) wake=on ;; *) wake=off ;; esac
+
+outline() {
+  cat <<EOF
+intro       who Jarvis is and what he is for
+speaking    what gets said, and when: summaries, approvals, narration, several sessions
+quiet       stopping him: hush, mute, the keys, the widget
+listening   "Hey Jarvis", dictation, pausing by voice, follow-up turns
+voice       voices, engines, pronunciations
+settings    where the settings live
+commands    the /jarvis command, and how to ask for this tour again
+EOF
+}
+
+# --- the script ---------------------------------------------------------------
+# One function per section; each `p` is a paragraph, spoken as one line.
+intro() {
+  p "Good day, $you. I am Jarvis. I give the coding assistant in your terminal a voice, and I give you a way to interrupt it. This is the tour. Interrupt me at any point and I will stop."
+  p "Everything I do is one of three things: I speak for the assistant, I stay quiet when you tell me to, and, if you have turned it on, I listen for you."
+}
+speaking() {
+  p "First, speaking. When the assistant finishes a turn, I read you the reply. Short replies I read as they are. Longer ones I summarise into a sentence or two. If the reply ends with a question, you will always hear the question word for word, because that is the part you need to answer."
+  p "When the assistant needs your approval to run a command or edit a file, I say so: $you, I need your approval to use Bash. When it is waiting for you and you have gone quiet, I say: awaiting your input."
+  p "While it works, I narrate lightly: editing config, running the tests. That narration is low priority. If I am already talking, it is dropped rather than queued."
+  p "If you have several sessions open, I put the name of the repository in front of what I say, so you know which one is talking to you."
+}
+quiet() {
+  p "Second, keeping quiet. To stop me mid-sentence, hush me. Sending a new prompt hushes me automatically, so you never have to wait for me to finish before you type."
+  if [ "$mac" = 1 ]; then
+    p "On the Mac, the menu bar icon shows my state. Click it for hush, mute and the wake word. If the wake word is on, saying Hey Jarvis while I am talking stops me and opens the mic."
+  else
+    p "On the keyboard, right Alt hushes me and opens dictation. Super, Shift, J just hushes. In the bar, my widget shows my state: click to mute, right-click to hush, middle-click to toggle the wake word."
+  fi
+  p "Hush stops the current line. Mute silences me until you unmute. Tell the assistant: jarvis mute, or jarvis, be quiet. Unmute the same way."
+}
+listening() {
+  if [ "$wake" = on ]; then
+    p "Third, listening. The wake word is on. Say Hey Jarvis, wait for the chime, and speak. I stop talking, I transcribe you locally, and I type what you said into the focused window. Stop speaking and the recording ends on its own."
+  else
+    p "Third, listening. The wake word is currently off. To turn it on, tell the assistant: jarvis listen enable. Then say Hey Jarvis, wait for the chime, and speak. I transcribe you locally and type what you said into the focused window."
+  fi
+  p "If I keep waking when you did not call me, say: Hey Jarvis, stop listening. I will ignore everything until you say: Hey Jarvis, start listening."
+  if [ "$mac" = 1 ]; then
+    if [ "$JARVIS_CONVERSE" = 1 ]; then
+      p "Conversation mode is on. After I read a reply, I chime and listen for a moment. Say something and it is sent as your next message. Say nothing and I go back to waiting for the wake word."
+    else
+      p "There is also a conversation mode: after I read a reply, I chime and listen for your follow-up, no wake word needed. It is off at the moment. Set JARVIS_CONVERSE to 1 in the config to try it."
+    fi
+  fi
+}
+voice() {
+  p "Fourth, my voice. By default I use a Microsoft neural voice, which needs the network, and fall back to a local voice if it is unavailable. The assistant can change either: jarvis voice, followed by a voice name, or jarvis voices for a list."
+  p "If I mispronounce something, teach me: jarvis pronounce, the word, and how to say it. I will remember."
+}
+settings() {
+  p "Fifth, settings. They live in one file: config.sh, under .config, jarvis, in your home directory. How I address you, whether I narrate, which tools I narrate, the summary style, the wake word sensitivity. Every key is documented with its default. Ask the assistant to change one and it will edit the file."
+}
+commands() {
+  p "Finally, the command. In the assistant, slash jarvis, followed by what you want: hush, mute, unmute, status, listen enable, voice, pronounce. Or just say it in plain words; the assistant knows what I understand."
+  p "To hear this again, ask for a tour, or for one part of it: jarvis tour listening, for instance. That is everything, $you. I will be here when you need me."
+}
+
+# --- delivery -------------------------------------------------------------------
+mode=speak
+sections=""
+for a in "$@"; do
+  case "$a" in
+    --outline) outline; exit 0 ;;
+    --text) mode=text ;;
+    intro|speaking|quiet|listening|voice|settings|commands) sections="$sections $a" ;;
+    *) echo "jarvis-tour: unknown section '$a' (see --outline)" >&2; exit 1 ;;
+  esac
+done
+[ -z "$sections" ] && sections="intro speaking quiet listening voice settings commands"
+
+epoch="$(jarvis_epoch)"
+p() { # p <paragraph>  — print, then speak unless --text or hushed
+  printf '%s\n\n' "$1"
+  [ "$mode" = text ] && return 0
+  [ "$(jarvis_epoch)" = "$epoch" ] || { echo "(tour interrupted)"; exit 0; }
+  "$CORE/jarvis-say" "$1" || { echo "(tour interrupted)"; exit 0; }
+}
+
+if [ "$mode" = speak ]; then
+  jarvis_muted && { echo "Jarvis is muted; unmute first (jarvis unmute) or use --text." >&2; exit 1; }
+  # The Stop hook stays quiet while this pid is alive, so the assistant's own
+  # "started the tour" reply doesn't talk over the tour.
+  mkdir -p "$JARVIS_CACHE"; echo $$ > "$JARVIS_CACHE/tour.pid"
+  trap 'rm -f "$JARVIS_CACHE/tour.pid"' EXIT
+fi
+for s in $sections; do $s; done
