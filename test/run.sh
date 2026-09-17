@@ -189,6 +189,17 @@ check "tour intro spoken" '^Everything I do is one of three things'
 [ "$(spoken | wc -l | tr -d ' ')" = 2 ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour intro is two paragraphs: $(spoken | wc -l)"; }
 fresh; FAKE_WAKE="active (pid 1)" "$TOUR" listening >/dev/null
 check_any "tour adapts to wake word on" '^Third, listening\. The wake word is on\.'
+# Paragraphs that say "Hey Jarvis" would wake the listener and hush the tour: the
+# listener is stopped just for those lines, then started again.
+fresh; FAKE_WAKE="active (pid 1)" "$TOUR" listening >/dev/null
+[ "$(spoken | sed -n '1p;2p;3p' | cut -c1-18 | tr '\n' '|')" = "jarvis listen stop|Third, listening. |jarvis listen star|" ] \
+  && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour shuts the listener's ears around the wake phrase: $(spoken | head -3)"; }
+[ "$(spoken | grep -c '^jarvis listen stop')" = "$(spoken | grep -c '^jarvis listen start')" ] \
+  && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   every listen stop has a matching start"; }
+fresh; FAKE_WAKE="active (pid 1)" "$TOUR" voice >/dev/null
+spoken | grep -q '^jarvis listen' && { fail=$((fail + 1)); echo "FAIL   no wake phrase, listener left alone"; } || pass=$((pass + 1))
+fresh; "$TOUR" listening >/dev/null
+spoken | grep -q '^jarvis listen' && { fail=$((fail + 1)); echo "FAIL   wake word off, listener left alone"; } || pass=$((pass + 1))
 fresh; "$TOUR" bogus >/dev/null 2>&1 && { fail=$((fail + 1)); echo "FAIL   tour rejects unknown section"; } || pass=$((pass + 1))
 fresh; FAKE_HUSH=1 "$TOUR" intro speaking | grep -q '(tour interrupted)' && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   tour stops on hush"; }
 [ "$(spoken | wc -l | tr -d ' ')" = 1 ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL   hushed tour spoke only one paragraph: $(spoken | wc -l)"; }

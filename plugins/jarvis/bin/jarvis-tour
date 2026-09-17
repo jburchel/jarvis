@@ -90,11 +90,20 @@ done
 [ -z "$sections" ] && sections="intro speaking quiet listening voice settings commands"
 
 epoch="$(jarvis_epoch)"
+# Saying the wake phrase out loud wakes the listener, which hushes the tour and
+# opens the mic. Stop the listener for just those paragraphs; every other one
+# can still be interrupted by voice.
+ears=open
+ears_shut() { [ "$wake" = on ] && [ "$ears" = open ] && { "$CORE/jarvis" listen stop >/dev/null 2>&1; ears=shut; }; }
+ears_open() { [ "$ears" = shut ] && { "$CORE/jarvis" listen start >/dev/null 2>&1; ears=open; }; }
 p() { # p <paragraph>  — print, then speak unless --text or hushed
   printf '%s\n\n' "$1"
   [ "$mode" = text ] && return 0
   [ "$(jarvis_epoch)" = "$epoch" ] || { echo "(tour interrupted)"; exit 0; }
-  "$CORE/jarvis-say" "$1" || { echo "(tour interrupted)"; exit 0; }
+  case "$1" in *"Hey Jarvis"*) ears_shut ;; esac
+  "$CORE/jarvis-say" "$1"; rc=$?
+  ears_open
+  [ "$rc" = 0 ] || { echo "(tour interrupted)"; exit 0; }
 }
 
 if [ "$mode" = speak ]; then
@@ -102,6 +111,6 @@ if [ "$mode" = speak ]; then
   # The Stop hook stays quiet while this pid is alive, so the assistant's own
   # "started the tour" reply doesn't talk over the tour.
   mkdir -p "$JARVIS_CACHE"; echo $$ > "$JARVIS_CACHE/tour.pid"
-  trap 'rm -f "$JARVIS_CACHE/tour.pid"' EXIT
+  trap 'ears_open; rm -f "$JARVIS_CACHE/tour.pid"' EXIT
 fi
 for s in $sections; do $s; done

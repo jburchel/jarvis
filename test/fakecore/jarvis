@@ -2,6 +2,6 @@
 # Fake jarvis CLI: record verbs that matter; answer the queries the adapter makes.
 . "$(dirname "$0")/jarvis-env"
 case "$1" in
-  listen) [ "$2" = status ] && echo "${FAKE_WAKE:-inactive}" ;;
+  listen) if [ "$2" = status ]; then echo "${FAKE_WAKE:-inactive}"; else printf 'jarvis %s\n' "$*" >> "$JARVIS_CACHE/spoken"; fi ;;
   *) printf 'jarvis %s\n' "$*" >> "$JARVIS_CACHE/spoken" ;;
 esac
