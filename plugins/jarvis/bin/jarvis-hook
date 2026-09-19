@@ -24,7 +24,11 @@ type jarvis_epoch >/dev/null 2>&1 || jarvis_epoch() { echo 0; }
 
 event="$1"; input="$(cat)"
 j() { printf '%s' "$input" | jq -r "$1 // empty" 2>/dev/null; }
-say() { "$CORE/jarvis-say" "$@"; }
+say() { # say [--low|--replace] <text>  — text goes over stdin, not argv: it is agent output,
+  # and command lines are visible to every local process.
+  local flags=(); while [ $# -gt 1 ]; do flags+=("$1"); shift; done
+  printf '%s' "$1" | "$CORE/jarvis-say" "${flags[@]}"
+}
 hush() { "$CORE/jarvis" hush >/dev/null 2>&1; }
 clean() { "$HERE/jarvis-clean" "$@"; }
 Addr="$(jarvis_cap "$JARVIS_ADDRESS")"
